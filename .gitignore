@@ -5,7 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-
+ds200_project
 # Distribution / packaging
 .Python
 build/
