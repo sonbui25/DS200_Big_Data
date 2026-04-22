@@ -91,7 +91,7 @@ def _parse_products(html: str) -> list[dict]:
 
         products.append(
             {
-                "name": name_tag.get_text(strip=True),
+                "product_name": name_tag.get_text(strip=True),
                 "url": name_tag.get("href", ""),
                 "price_vnd": price_vnd,
                 "price_str": raw_price,
@@ -151,10 +151,10 @@ def _fetch_api_page(session: requests.Session, slug: str, page: int) -> list[dic
     return _parse_products(html)
 
 
-def crawl_product_links() -> Sequence[dict]:
+def crawl_product_links(max_total_products: int | None = None) -> Sequence[dict]:
     """
     Crawl danh sach san pham tu mobilecity.
-    Output: list[dict] gom name/url/price_vnd/price_str/image/slug
+    Output: list[dict] gom product_name/url/price_vnd/price_str/image/slug
     """
     session = requests.Session()
     _initialize_session(session=session)
@@ -165,10 +165,16 @@ def crawl_product_links() -> Sequence[dict]:
     seen_urls: set[str] = set()
     max_pages_per_slug = max(1, settings.mobilecity_max_pages_per_slug)
 
+    target_max = max_total_products if max_total_products and max_total_products > 0 else None
+
     for slug in slugs:
         print(f"[INFO] Crawling slug={slug}", flush=True)
         page = 1
         while True:
+            if target_max is not None and len(all_products) >= target_max:
+                print(f"[INFO] Reached max product limit={target_max}. Stop crawler.", flush=True)
+                return all_products
+
             if page > max_pages_per_slug:
                 print(
                     f"[WARN] Reached page limit slug={slug} limit={max_pages_per_slug}",
@@ -190,6 +196,8 @@ def crawl_product_links() -> Sequence[dict]:
                 product["slug"] = slug
                 all_products.append(product)
                 inserted_count += 1
+                if target_max is not None and len(all_products) >= target_max:
+                    break
 
             print(
                 f"[INFO] slug={slug} page={page} fetched={len(batch)} inserted={inserted_count} total={len(all_products)}",
