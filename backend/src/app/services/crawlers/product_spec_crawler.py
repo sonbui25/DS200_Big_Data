@@ -1,11 +1,14 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 import time
 
 import requests
 from bs4 import BeautifulSoup
 
 
-def crawl_product_specs(product_links: Sequence[dict]) -> Sequence[dict]:
+def crawl_product_specs(
+    product_links: Sequence[dict],
+    on_mapped_record: Callable[[dict, int, int], None] | None = None,
+) -> Sequence[dict]:
     """
     Crawl thong so chi tiet va map ve schema DB-ready.
     """
@@ -47,6 +50,8 @@ def crawl_product_specs(product_links: Sequence[dict]) -> Sequence[dict]:
         if mapped_record:
             mapped_records.append(mapped_record)
             success_count += 1
+            if on_mapped_record is not None:
+                on_mapped_record(mapped_record, index, total_links)
             print(
                 f"[INFO] [{index}/{total_links}] Success mapped={success_count} failed={failed_count} skipped={skipped_count}",
                 flush=True,
@@ -107,7 +112,9 @@ def _map_to_database_schema(raw_specs: dict, input_data: dict) -> dict | None:
     return {
         "_source_url": input_data.get("url"),
         "fact_product": {
-            "product_name": input_data.get("name", "Unknown Name"),
+            "product_name": input_data.get("product_name")
+            or input_data.get("name")
+            or "Unknown Name",
             "os_version": _clean_val(raw_specs.get("Hệ điều hành")),
             "language_support": _clean_val(raw_specs.get("Ngôn ngữ")),
         },
