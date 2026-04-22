@@ -2,7 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.engine import Connection, Engine
 
 from src.app.database.connection import get_engine, health_check
@@ -15,6 +15,8 @@ from src.app.database.models import (
     dim_performance,
     dim_storage,
     dim_utilities,
+    dim_video_comments,
+    dim_video_transcripts,
     fact_product,
 )
 
@@ -48,10 +50,15 @@ def _build_link_index(raw_links: list[dict]) -> dict[str, dict]:
     return link_index
 
 
+def _truncate_youtube_tables(connection: Connection) -> None:
+    connection.execute(
+        text("TRUNCATE TABLE dim_video_comments, dim_video_transcripts RESTART IDENTITY CASCADE")
+    )
+
+
 def _truncate_tables(connection: Connection) -> None:
-    for table in reversed(DIM_TABLES):
-        connection.execute(table.delete())
-    connection.execute(fact_product.delete())
+    table_names = [dim_video_comments.name, dim_video_transcripts.name, *(table.name for table in DIM_TABLES), fact_product.name]
+    connection.execute(text(f"TRUNCATE TABLE {', '.join(table_names)} RESTART IDENTITY CASCADE"))
 
 
 def _sanitize_payload_for_table(table, payload: dict) -> dict:
@@ -161,6 +168,7 @@ def load_products_to_db(
     spec_records: list[dict],
     raw_links: list[dict],
     truncate: bool = False,
+    truncate_youtube: bool = False,
 ) -> tuple[int, int, int]:
     link_index = _build_link_index(raw_links)
     health_check()
@@ -168,7 +176,11 @@ def load_products_to_db(
     if truncate:
         with engine.begin() as connection:
             _truncate_tables(connection=connection)
-            print("[INFO] Existing rows were truncated.")
+            print("[INFO] Truncated YouTube tables, product dims, and fact_product.")
+    elif truncate_youtube:
+        with engine.begin() as connection:
+            _truncate_youtube_tables(connection=connection)
+            print("[INFO] Truncated dim_video_comments and dim_video_transcripts only.")
 
     inserted_count, skipped_malformed_count, skipped_existing_count = _insert_products(
         engine=engine,
@@ -193,7 +205,12 @@ def main() -> None:
     parser.add_argument(
         "--truncate",
         action="store_true",
-        help="Delete existing fact/dim rows before loading.",
+        help="Delete YouTube tables, then fact+dims, before loading (full reset).",
+    )
+    parser.add_argument(
+        "--truncate-youtube",
+        action="store_true",
+        help="Delete only dim_video_comments and dim_video_transcripts (keep products).",
     )
     args = parser.parse_args()
 
@@ -206,6 +223,7 @@ def main() -> None:
         spec_records=spec_records,
         raw_links=raw_links,
         truncate=args.truncate,
+        truncate_youtube=args.truncate_youtube,
     )
 
     print(f"[INFO] Inserted {inserted_count} products into DB.")

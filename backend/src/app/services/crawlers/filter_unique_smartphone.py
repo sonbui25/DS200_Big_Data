@@ -1,10 +1,11 @@
 import json
 import re
+import sys
 
 # --- Cấu hình File ---
-INPUT_FILE = "data/db_ready_phones.json"    
-OLD_PHONES_FILE = "data/db_ready_phones_filtered_old.json"    
-NEW_PHONES_FILE = "data/db_ready_phones_filtered_new.json"    
+INPUT_FILE = "data/processed/product_specs.json"    
+OLD_PHONES_FILE = f"data/processed/product_specs_filtered_old.json"    
+NEW_PHONES_FILE = f"data/processed/product_specs_filtered_new.json"    
 
 def classify_phone(product_name):
     """
@@ -29,6 +30,7 @@ def classify_phone(product_name):
     return "OLD"
 
 def main():
+
     try:
         with open(INPUT_FILE, "r", encoding="utf-8") as f:
             all_records = json.load(f)
@@ -40,10 +42,14 @@ def main():
     new_phones = []
 
     for record in all_records:
-        name = record.get("fact_product", {}).get("product_name", "")
+        product_name = (
+            record.get("fact_product", {}).get("product_name")
+            or record.get("product_name")
+            or ""
+        )
         
         # Gọi hàm phân loại
-        if classify_phone(name) == "NEW":
+        if classify_phone(product_name) == "NEW":
             new_phones.append(record)
         else:
             old_phones.append(record)
