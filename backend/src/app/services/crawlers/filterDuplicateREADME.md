@@ -22,10 +22,14 @@ LLM cần được tuning bằng prompt kỹ lưỡng để parse các tên dài
 - `storage`: Phiên bản RAM / Bộ nhớ trong (VD: "8GB/256GB", "1TB"). Nếu không có thì trả về "unknown".
 - `condition`: Tình trạng tổng quát. Cần map tất cả các keyword ("99%", "99.9%", "Nguyên seal", "Like new") về 2 nhóm cơ bản: **"Cũ"** hoặc **"Mới"** để dễ group.
 - `region`: Phân loại khu vực / mã (VD: "Chính hãng", "Xách tay", "Bản Mỹ", "VN/A").
+- `memory`: Dung lượng RAM (Trích xuất từ cấu hình chi tiết).
+- `chipset`: Tên vi xử lý / CPU (Yếu tố cực kỳ quan trọng để định danh chính xác thiết bị, trích xuất từ cấu hình chi tiết).
 
-## 4. Pipeline dự kiến (Upcoming Flow)
-1. **Load Raw Data**: Đọc file `data/raw/product_links.json`.
-2. **Batch LLM NER**: Chạy Gemini 3 Flash Lite để parse hàng loạt raw_name thành list obj JSON chứa `[base_name, storage, condition, region]`.
-3. **Deduplication (Lọc trùng)**: Nhóm (Group by) các phần tử theo `base_name`.
-4. **Generate YouTube Queries**: Trích xuất ra tập `base_name` duy nhất, chuẩn sạch, cung cấp trực tiếp làm từ khóa search (query) cho YouTube API.
-5. **Load to Database (RDS)**: Cập nhật lại các bảng trong PostgreSQL với tên đã chuẩn hóa, đồng bộ metadata YouTube dựa trên `base_name`.
+## 4. Pipeline Mới Phân Tách Crawl & Load (The Advanced Workflow)
+Việc chỉ dựa vào chuỗi `product_title` để lọc trùng là rủi ro và thiếu dữ liệu (ví dụ máy không ghi chip trên tên nhưng khác cấu hình). Do đó, chiến lược sẽ thay đổi: thu thập toàn bộ thông tin Dimensions (cấu hình chi tiết) trước khi lọc.
+
+1. **Crawl Links**: Chạy crawler để lấy ~2300 links sản phẩm -> lưu vào `data/raw/product_links.json`.
+2. **Crawl Specs to Local JSON**: Cào chi tiết từng sản phẩm (dựa trên link) để lấy thông số kỹ thuật (memory, chipset, camera, battery...) -> **Lưu ra 1 file trung gian (vd: `product_specs_raw.json`) chứ KHÔNG đẩy thẳng vào DB**.
+3. **LLM Deduplication & Normalization**: Dùng LLM (Gemini 3 Flash Lite) truyền vào cả *Tên Sản Phẩm* + *Thông Số Kỹ Thuật (Dim)*. LLM sẽ dễ dàng nhận diện và gộp các bản ghi giống nhau về bảng cấu hình nhưng khác râu ria ở tên. Output ra file `product_specs_cleaned.json`.
+4. **Generate YouTube Queries**: Lấy các `base_name` đã làm sạch và duy nhất để cào video review.
+5. **Load to RDS**: Nạp dữ liệu sạch từ file `cleaned.json` vào các bảng Fact và Dim của PostgreSQL.
