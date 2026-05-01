@@ -1,3 +1,9 @@
+"""
+Crawler để lấy thông số chi tiết của từng sản phẩm điện thoại dựa trên danh sách URL đã thu thập từ bước trước (product_link_crawler).
+Output: backend/data/raw/all_product_specs_raw.json - File chứa toàn bộ thông số kỹ thuật (specs) chi tiết của từng đường link sản phẩm. 
+Dữ liệu chứa rất nhiều bản ghi trùng lặp do chia theo tình trạng máy (máy cũ, máy mới, mã vùng VN/A, các mức bộ nhớ khác nhau...).
+"""
+
 from collections.abc import Callable, Sequence
 import time
 

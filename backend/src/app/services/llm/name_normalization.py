@@ -1,3 +1,7 @@
+"""
+Định nghĩa schema PROMPT và Pydantic model để chuẩn hóa tên sản phẩm điện thoại.
+Schema này sẽ được sử dụng trong LLMNameNormalizer trong file llm_client.py.
+"""
 from pydantic import BaseModel, Field
 
 class NormalizedPhoneName(BaseModel):

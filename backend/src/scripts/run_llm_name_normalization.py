@@ -1,3 +1,17 @@
+"""
+Bước 4: Chuẩn hóa tên sản phẩm bằng LLM (LLM Name Normalization)
+
+Mục tiêu của bước này là sử dụng một mô hình ngôn ngữ lớn (LLM) để chuẩn hóa tên sản phẩm điện thoại, 
+loại bỏ các râu ria (marketing, tình trạng,...) không cần thiết và giữ lại phần cốt lõi giúp phân biệt các mẫu máy khác nhau.
+
+Kỹ thuật áp dụng:
+- Sử dụng mô hình ChatGPT (gpt-5.4-mini) qua Langchain.
+- Đọc dữ liệu từ `unique_smartphone_specs.json`, gọi LLM để chuẩn hóa tên sản phẩm, và ghi kết quả vào `ready_to_load_specs.json` để chuẩn bị cho bước 5 (Final Deduplication).
+- Tự động lưu mỗi 100 sample đã xử lý, đồng thời nghỉ ngơi 30 giây sau mỗi 100 sample để tránh sập Rate Limit tuỳ Provider.
+
+Input: `unique_smartphone_specs.json` (1,547 records) — đầu vào là các bản ghi đã được loại bỏ trùng lặp dựa trên phần cứng, nhưng tên sản phẩm vẫn còn thô và chứa nhiều râu ria.
+Output: `ready_to_load_specs.json` — toàn bộ record gốc được bổ sung thêm trường `search_query_name` chứa tên đã được chuẩn hóa, sẵn sàng để nạp vào database và phục vụ cho việc tìm kiếm sau này.
+"""
 import os
 import sys
 import json
