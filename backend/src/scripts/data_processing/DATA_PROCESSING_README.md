@@ -149,7 +149,7 @@ Khi một nhóm chứa nhiều record chung hash, thuật toán sắp xếp theo
 Từ thư mục gốc `backend/`:
 
 ```bash
-python -m src.scripts.run_deduplicate_specs
+python -m src.scripts.data_processing.run_deduplicate_specs
 ```
 
 **Kết quả log mẫu:**
@@ -399,7 +399,7 @@ Script truyền vào 3 trường từ mỗi record:
 #### Lệnh chạy
 
 ```bash
-python -m src.scripts.run_llm_name_normalization
+python -m src.scripts.data_processing.run_llm_name_normalization
 ```
 
 **Kết quả log mẫu:**
@@ -414,5 +414,21 @@ INFO: Hoàn thành! Đã ghi gộp 1547 bản ghi ra file: .../ready_to_load_spe
 
 ### 5.6 Các kỹ thuật áp dụng trong Final Deduplication (Bước 5)
 
+#### Lệnh chạy
+```bash
+python -m src.scripts.data_processing.run_final_deduplication
+```
+
 Bước này sẽ duyệt qua `ready_to_load_specs.json` và loại bỏ các record có `search_query_name` trùng lặp, để đảm bảo mỗi thiết bị vật lý chỉ còn một record duy nhất trước khi nạp vào database. 
+
+**Kết quả log mẫu:**
+
+```
+INFO: Đã đọc 1547 bản ghi từ D:\Git\DS200_Big_Data\backend\data\processed\ready_to_load_specs.json
+INFO: Đã lọc trùng khớp dựa trên search_query_name.
+INFO: -> Số bản ghi gốc: 1547
+INFO: -> Số bản ghi giữ lại: 1447
+INFO: -> Số bản ghi trùng bị loại: 100
+INFO: Hoàn thành! Đã lưu kết quả tại: D:\Git\DS200_Big_Data\backend\data\processed\final_ready_to_load_specs.json
+```
 

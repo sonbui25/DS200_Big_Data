@@ -12,6 +12,7 @@ Kỹ thuật áp dụng:
 Input: `unique_smartphone_specs.json` (1,547 records) — đầu vào là các bản ghi đã được loại bỏ trùng lặp dựa trên phần cứng, nhưng tên sản phẩm vẫn còn thô và chứa nhiều râu ria.
 Output: `ready_to_load_specs.json` — toàn bộ record gốc được bổ sung thêm trường `search_query_name` chứa tên đã được chuẩn hóa, sẵn sàng để nạp vào database và phục vụ cho việc tìm kiếm sau này.
 """
+
 import os
 import sys
 import json
