@@ -219,3 +219,7 @@ data/
 /backend/ffmpeg.exe
 /backend/ffplay.exe
 /backend/ffprobe.exe
+
+# Test file
+test_normalization.py
+test_db.py
