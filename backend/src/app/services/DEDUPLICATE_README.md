@@ -1,6 +1,6 @@
 # Smartphone Deduplication Pipeline
 
-> Lọc trùng dữ liệu smartphone dựa trên cấu hình phần cứng (Attribute-based Deduplication), kết hợp chuẩn hóa tên sản phẩm bằng LLM để phục vụ tìm kiếm YouTube.
+> Lọc trùng dữ liệu smartphone dựa trên cấu hình phần cứng, kết hợp chuẩn hóa tên sản phẩm bằng LLM để phục vụ tìm kiếm YouTube.
 
 ---
 
@@ -47,7 +47,7 @@ LLM chỉ tham gia ở **bước cuối cùng**, sau khi danh sách đã đượ
 
 ## 3. Tiêu chuẩn Gom nhóm
 
-Các record được gom thành **Duplicate** hoặc **Unique** bằng cách hash tổ hợp 7 hardware field cốt lõi sau. Đây là các định danh phần cứng mạnh nhất — không thể làm giả hay thay đổi bằng ngôn ngữ Marketing.
+Các record được gom thành **Duplicate** hoặc **Unique** bằng cách hash tổ hợp 7 hardware field cốt lõi sau. Đây là các định danh phần cứng mạnh nhất, không có lý do để làm giả hay thay đổi bằng ngôn ngữ Marketing.
 
 | Field | Path | Mô tả |
 |---|---|---|
@@ -82,8 +82,13 @@ Việc xét trùng lặp dựa hoàn toàn vào hardware spec. Nếu bản Mỹ 
        ▼
 [4] LLM Name Normalization
        │
+       └──► [5] ready_to_load_specs.json 
+       │
        ▼
-[5] ready_to_load_specs.json → Load to PostgreSQL RDS
+[5] run_final_deduplication.py
+       │
+       ▼
+[6] final_ready_to_load_specs.json→ Load to PostgreSQL RDS
 ```
 
 **Bước 1 — Crawl Links:**
@@ -93,6 +98,7 @@ Chạy crawler thu thập danh sách URL sản phẩm → lưu vào `data/raw/pr
 Chạy `run_crawl_all_specs_only.py` để lấy toàn bộ bảng thông số kỹ thuật → lưu thành file vật lý `backend/data/raw/all_product_specs_raw.json`.
 
 **Bước 3 — Attribute-based Deduplication:**
+Chạy `run_deduplicate_specs.py` để thực hiện thuật toán deduplication dựa trên 7 hardware field cốt lõi.
 Duyệt qua `all_product_specs_raw.json`, tính MD5 hash từ 7 core field, gom nhóm, bầu chọn Master record, và tách ra 2 file output:
 
 - `backend/data/processed/unique_smartphone_specs.json` — 1 record đại diện mỗi hardware profile, mỗi record có `id` duy nhất.
@@ -101,8 +107,11 @@ Duyệt qua `all_product_specs_raw.json`, tính MD5 hash từ 7 core field, gom 
 **Bước 4 — LLM Name Normalization:**
 Chạy `run_llm_name_normalization.py` để prompt LLM duyệt qua danh sách unique và sinh ra trường `search_query_name` cho mỗi thiết bị. Output: `ready_to_load_specs.json`.
 
-**Bước 5 — Load to RDS:**
-Nạp `ready_to_load_specs.json` vào các bảng Fact và Dimension trên PostgreSQL.
+**Bước 5 — Lọc trùng vòng 2:**
+Chạy `run_final_deduplication.py` xóa các bản ghi trùng search query, để lọc bỏ các bản ghi trùng lặp còn sót lại. Output: `final_ready_to_load_specs.json`.
+
+**Bước 6 — Load to RDS:**
+Nạp `final_ready_to_load_specs.json` vào các bảng Fact và Dimension trên PostgreSQL.
 
 ---
 
@@ -334,7 +343,7 @@ Sau khi deduplication, mỗi Master record vẫn mang tên Marketing thô từ c
 | **Input** | `unique_smartphone_specs.json` (1,547 records) |
 | **Output** | `ready_to_load_specs.json` — toàn bộ record gốc được bổ sung thêm trường `search_query_name` |
 
-### Model & Cấu hình
+#### Model & Cấu hình
 
 ```python
 self.llm = ChatOpenAI(
@@ -346,7 +355,7 @@ self.llm = ChatOpenAI(
 
 Temperature thấp (`0.1`) là bắt buộc: tên điện thoại không có chỗ cho sự ngẫu nhiên.
 
-### Schema đầu ra (Structured Output)
+#### Schema đầu ra (Structured Output)
 
 ```python
 class NormalizedPhoneName(BaseModel):
@@ -358,7 +367,7 @@ class NormalizedPhoneName(BaseModel):
 
 LLM được ràng buộc trả về JSON theo Pydantic schema — loại bỏ hoàn toàn rủi ro parse lỗi.
 
-### Chiến lược Prompt
+#### Chiến lược Prompt
 
 Script truyền vào 3 trường từ mỗi record:
 
@@ -376,7 +385,7 @@ Script truyền vào 3 trường từ mỗi record:
 - **Chipset:** Chỉ giữ tên dòng chip, cắt bỏ số nhân, xung nhịp GHz, kiến trúc nm, GPU
 - **Dual-chip** (Samsung S10 series): Giữ cả hai tên chip chuẩn
 
-### Ví dụ minh họa
+#### Ví dụ minh họa
 
 | `product_name` (thô) | `chipset` (thô) | `search_query_name` (output) |
 |---|---|---|
@@ -387,7 +396,7 @@ Script truyền vào 3 trường từ mỗi record:
 
 > **Lý do giữ chipset trong search query:** Các mẫu máy bán ở nhiều thị trường khác nhau (Samsung S-series, OnePlus...) dùng chip khác nhau theo khu vực. Query `"Samsung Galaxy S23 Snapdragon 8 Gen 2"` sẽ trả về video review đúng variant, thay vì trộn lẫn kết quả của cả hai phiên bản Exynos và Snapdragon.
 
-### Lệnh chạy
+#### Lệnh chạy
 
 ```bash
 python -m src.scripts.run_llm_name_normalization
@@ -402,20 +411,8 @@ INFO: Processing (1547/1547): Tecno CAMON 30 Pro 5G (màn AMOLED 144Hz)
 INFO:   -> Normalized: Tecno CAMON 30 Pro 5G Dimensity 8200 Ultimate
 INFO: Hoàn thành! Đã ghi gộp 1547 bản ghi ra file: .../ready_to_load_specs.json
 ```
-## 6. Kế hoạch File & Script
 
-### 6.1 File mới cần tạo
+### 5.6 Các kỹ thuật áp dụng trong Final Deduplication (Bước 5)
 
-| Path | Mô tả |
-|---|---|
-| `backend/src/scripts/run_deduplicate_specs.py` | Load `all_product_specs_raw.json`, tính spec hash, xuất ra 2 file `unique_...` và `suspected_...`. |
-| `backend/src/scripts/run_llm_name_normalization.py` | Kết nối LLM API (Gemini), duyệt qua danh sách unique, ghi `search_query_name` cho từng thiết bị. |
-| `backend/data/processed/unique_smartphone_specs.json` | Danh sách thiết bị đã làm sạch, mỗi record có `id` duy nhất. |
-| `backend/data/processed/suspected_duplicates.json` | Các record trùng lặp kèm `reference_id` foreign key trỏ về Master. |
+Bước này sẽ duyệt qua `ready_to_load_specs.json` và loại bỏ các record có `search_query_name` trùng lặp, để đảm bảo mỗi thiết bị vật lý chỉ còn một record duy nhất trước khi nạp vào database. 
 
-### 6.2 File cũ cần deprecated
-
-| Path | Lý do |
-|---|---|
-| `backend/data/processed/product_links_filtered_new.json` | Bị thay thế bởi spec-based deduplication. Việc phân loại NEW/OLD bằng Regex không còn cần thiết vì spec pipeline đã gom mọi variant về cùng một thiết bị. |
-| Logic deduplication trong `run_crawl_to_db.py` | Cần refactor để đọc từ các file JSON thành phẩm thay vì xử lý inline. |

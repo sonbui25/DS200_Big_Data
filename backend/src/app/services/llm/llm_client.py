@@ -1,3 +1,10 @@
+"""
+Định nghĩa class LLMNameNormalizer để chuẩn hóa tên sản phẩm điện thoại bằng cách sử dụng mô hình ngôn ngữ lớn thông qua Langchain. 
+Class này sẽ nhận đầu vào là tên sản phẩm thô (tên hiển thị trên web) cùng với một số thông số phần cứng (chipset, RAM, storage) 
+và trả về tên đã được chuẩn hóa, loại bỏ các râu ria (marketing, tình trạng,...) không cần thiết.
+Nhận PROMPT và Pydantic model từ file llm/name_normalization.py.
+"""
+
 from openai import OpenAI
 import os
 import logging
@@ -13,7 +20,7 @@ class LLMNameNormalizer:
         self.provider = provider
         # Khởi tạo mô hình ChatOpenAI từ Langchain
         self.llm = ChatOpenAI(
-            model="gpt-5.4-mini", # Vẫn giữ model name này theo cấu hình cũ của bạn
+            model="gpt-5.4-mini",
             api_key=api_key,
             temperature=0.1
         )

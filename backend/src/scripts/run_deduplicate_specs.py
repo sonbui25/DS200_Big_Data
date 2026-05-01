@@ -1,3 +1,14 @@
+"""
+Bước 3: Loại bỏ trùng lặp dựa trên phần cứng (Hardware-based Deduplication)
+
+Mục tiêu của bước này là nhóm các bản ghi có thông số phần cứng lõi giống nhau (CPU, RAM, GPU, pin, kích thước, trọng lượng) 
+vào cùng một nhóm, bất kể tên sản phẩm có thể khác nhau do râu ria marketing hay lỗi nhập liệu.
+
+Input: `all_product_specs_raw.json` (2,000+ records) — đầu vào là toàn bộ bản ghi thô sau khi crawl, nhưng chưa qua bất kỳ bước loại bỏ trùng lặp nào.
+Output:
+- `unique_smartphone_specs.json` — chứa một bản ghi "Master" duy nhất cho mỗi nhóm phần cứng, được chọn dựa trên tiêu chí tên sản phẩm ngắn gọn nhất (ít râu ria marketing nhất).
+- `suspected_duplicates.json` — chứa các bản ghi còn lại trong mỗi nhóm, được gắn thêm trường `reference_id` tham chiếu tới bản ghi Master tương ứng. Các bản ghi này có thể được xem xét thủ công sau này để quyết định giữ hay loại bỏ hoàn toàn.
+"""
 import json
 import hashlib
 import os
