@@ -9,6 +9,7 @@ Output:
 - `unique_smartphone_specs.json` — chứa một bản ghi "Master" duy nhất cho mỗi nhóm phần cứng, được chọn dựa trên tiêu chí tên sản phẩm ngắn gọn nhất (ít râu ria marketing nhất).
 - `suspected_duplicates.json` — chứa các bản ghi còn lại trong mỗi nhóm, được gắn thêm trường `reference_id` tham chiếu tới bản ghi Master tương ứng. Các bản ghi này có thể được xem xét thủ công sau này để quyết định giữ hay loại bỏ hoàn toàn.
 """
+
 import json
 import hashlib
 import os

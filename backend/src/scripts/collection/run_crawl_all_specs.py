@@ -1,3 +1,17 @@
+"""
+Script: run_crawl_all_specs.py
+Mô tả: Chạy độc lập luồng cào chi tiết cấu hình phần cứng (Hardware Specs) cho từng đường link điện thoại. Dữ liệu cào về chưa qua bước lọc trùng hay làm sạch.
+Kỹ thuật: Nhận đầu vào là danh sách links, gọi hàm `crawl_product_specs` (thư viện BeautifulSoup) duyệt qua từng trang sản phẩm để bóc tách thông số. Thiết lập cơ chế checkpoint (lưu file json tạm) sau mỗi 50 records để tránh mất dữ liệu nếu gián đoạn mạng.
+Input: Danh sách links sản phẩm (mặc định từ: data/raw/product_links.json).
+Output: Sinh ra file JSON chứa toàn bộ dữ liệu cấu hình thô, map theo chuẩn Schema (mặc định tại: data/raw/all_product_specs_raw.json).
+
+Cách sử dụng:
+1. Chạy mặc định:
+   python -m src.scripts.collection.run_crawl_all_specs
+2. Chạy với file input/output tùy chỉnh:
+   python -m src.scripts.collection.run_crawl_all_specs --links-file custom_links.json --output-file custom_specs.json
+"""
+
 import argparse
 import json
 from pathlib import Path
@@ -45,11 +59,11 @@ def main() -> None:
                 json.dump(all_specs_raw, out_f, ensure_ascii=False, indent=2)
 
     # 3. Chạy crawler (Tận dụng nguyên logic siêu tốt của product_spec_crawler)
-    print("🚀 Bắt đầu cào Specs cho hệ thống The Advanced Workflow...")
+    print("Bắt đầu cào Specs cho hệ thống The Advanced Workflow...")
     crawl_product_specs(product_links, on_mapped_record=on_mapped)
 
     # 4. Chốt hạ
-    print(f"✅ Hoàn tất! Đã lưu {len(all_specs_raw)} bản ghi Specs vào {output_path}")
+    print(f"Hoàn tất! Đã lưu {len(all_specs_raw)} bản ghi Specs vào {output_path}")
 
 if __name__ == "__main__":
     main()
