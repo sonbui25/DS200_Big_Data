@@ -9,3 +9,7 @@ langchain
 langchain-openai
 langsmith
 pydantic
+pydantic_settings
+psycopg
+youtube-transcript-api
+unidecode

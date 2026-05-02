@@ -69,13 +69,17 @@ def _sanitize_payload_for_table(table, payload: dict) -> dict:
         sanitized_payload[key] = value
     return sanitized_payload
 
+def _build_fact_payload(record: dict) -> dict:
+    fact_payload = dict(record.get("fact_product") or {})
+    fact_payload["product_name"] = record.get("search_query_name") or fact_payload.get("product_name")
+    return fact_payload
 
 def _insert_single_product(
     connection: Connection,
     record: dict,
     link_index: dict[str, dict],
 ) -> None:
-    fact_payload = dict(record.get("fact_product") or {})
+    fact_payload = _build_fact_payload(record)
     source_url = record.get("_source_url")
     extra_link_data = link_index.get(source_url, {})
     fact_payload["price"] = extra_link_data.get("price_vnd")
@@ -109,7 +113,7 @@ def _insert_products(
         }
 
     for index, record in enumerate(spec_records, start=1):
-        fact_payload = dict(record.get("fact_product") or {})
+        fact_payload = _build_fact_payload(record)
         if not fact_payload:
             skipped_malformed += 1
             if index % 100 == 0:
@@ -194,8 +198,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Load crawled products into database.")
     parser.add_argument(
         "--specs",
-        default="data/processed/product_specs.json",
-        help="Path to product specs JSON output.",
+        default="data/processed/final_ready_to_load_specs.json",
+        help="Path to product specs JSON output. Default is final_ready_to_load_specs.json",
     )
     parser.add_argument(
         "--links",
@@ -203,9 +207,9 @@ def main() -> None:
         help="Path to product links JSON output.",
     )
     parser.add_argument(
-        "--truncate",
+        "--append",
         action="store_true",
-        help="Delete YouTube tables, then fact+dims, before loading (full reset).",
+        help="Append new records without truncating the database. By default, the database is truncated.",
     )
     parser.add_argument(
         "--truncate-youtube",
@@ -219,10 +223,14 @@ def main() -> None:
 
     spec_records = _read_json_file(specs_path)
     raw_links = _read_json_file(links_path)
+
+    # By default we truncate. If --append is passed, we don't truncate.
+    do_truncate = not args.append
+
     inserted_count, skipped_malformed_count, skipped_existing_count = load_products_to_db(
         spec_records=spec_records,
         raw_links=raw_links,
-        truncate=args.truncate,
+        truncate=do_truncate,
         truncate_youtube=args.truncate_youtube,
     )
 
