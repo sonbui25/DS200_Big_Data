@@ -12,13 +12,15 @@ Pipeline này chuẩn hóa luồng dữ liệu sản phẩm smartphone từ ngu�
 
 ## 2) Nguồn code chính (source of truth)
 
-- `DS200_Big_Data/backend/src/scripts/run_crawl_to_db.py`
-- `DS200_Big_Data/backend/src/scripts/load_products_to_db.py`
-- `DS200_Big_Data/backend/src/scripts/run_unique_smartphone_media_flow.py`
-- `DS200_Big_Data/backend/src/app/services/crawlers/product_link_crawler.py`
-- `DS200_Big_Data/backend/src/app/services/crawlers/product_spec_crawler.py`
-- `DS200_Big_Data/backend/src/app/services/youtube_media_pipeline.py`
-- `DS200_Big_Data/backend/src/app/services/s3_storage.py`
+- `DS200_Big_Data/backend/src/scripts/run_crawl_to_db.py`: Script điều phối chính để thực hiện chuỗi luồng xử lý: crawl link sản phẩm từ MobileCity -> lọc danh sách theo nhóm (NEW/OLD) -> crawl thông số kỹ thuật (specs) -> nạp thẳng vào cơ sở dữ liệu. Có thể truyền tham số chạy batch hoặc skip crawl qua CLI.
+- `DS200_Big_Data/backend/src/scripts/run_crawl_all_specs_only.py`: Crawl tất cả các specs, cần input file `DS200_Big_Data/backend/data/raw/product_links.json` (Chứa link đã crawl từ MobileCity) và output file `DS200_Big_Data/backend/data/raw/all_product_specs_raw.json` (Chứa thông số kỹ thuật đã crawl). Thường dùng khi muốn tách biệt bước lấy dữ liệu specs trước khi ingest vào DB. Tách biệt để lọc các mẫu điện thoại bị trùng lặp (duplicate) hoặc có cấu hình giống nhau nhưng tên khác nhau trước khi nạp vào DB.
+
+- `DS200_Big_Data/backend/src/scripts/load_products_to_db.py`: Script chịu trách nhiệm đọc dữ liệu JSON về thông số tĩnh của điện thoại (specs) để nạp vào DB (`fact_product` và 8 bảng dimensions liên quan) bằng SQLAlchemy, hỗ trợ truncate reset bảng hoặc bỏ qua các bản ghi lỗi.
+- `DS200_Big_Data/backend/src/scripts/run_unique_smartphone_media_flow.py`: Script điều phối nhánh Media. Đọc danh sách sản phẩm từ DB -> gọi API tìm kiếm YouTube -> dùng yt-dlp tải audio và comments -> upload lên AWS S3 -> lưu URL và metadata vào lại bảng `dim_video_transcripts` và `dim_video_comments`. Có cơ chế lưu checkpoint khi gặp lỗi.
+- `DS200_Big_Data/backend/src/app/services/crawlers/product_link_crawler.py`: Chứa logic (sử dụng requests/BeautifulSoup) để duyệt qua các trang danh mục MobileCity, thu thập URL sản phẩm, tên, ảnh và giá với cơ chế xử lý phân trang và retry nếu lỗi mạng.
+- `DS200_Big_Data/backend/src/app/services/crawlers/product_spec_crawler.py`: Đi vào chi tiết một sản phẩm qua URL, bóc tách bảng cấu hình (display, camera, battery,...) và chuẩn hóa dữ liệu key tiếng Việt để map sang data model tương ứng cho kho dữ liệu.
+- `DS200_Big_Data/backend/src/app/services/youtube_media_pipeline.py`: Chứa các hàm giao tiếp với YouTube Data API để lấy video liên quan, và gói lệnh gọi `yt-dlp` thông qua subprocess để tải tệp định dạng .mp3 và .csv (cho comments) xuống thư mục local tạm.
+- `DS200_Big_Data/backend/src/app/services/s3_storage.py`: Chứa thư viện tiện ích dùng `boto3` để connect tới bucket S3, thực thi việc upload an toàn cho các tập tin audio/comment và trả về s3_url phục vụ cho việc lưu vào DB.
 
 ## 3) Sơ đồ tổng quan pipeline
 

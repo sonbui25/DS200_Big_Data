@@ -2,23 +2,26 @@ import argparse
 import json
 import re
 import sys
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from sqlalchemy import func, select
+from sqlalchemy import create_engine, func, select
 
 from src.app.config.settings import settings
-from src.app.database.connection import get_engine, health_check
+from src.app.database.connection import get_engine
 from src.app.database.models import dim_video_comments, dim_video_transcripts, fact_product
-from src.app.services.s3_storage import upload_audio_file, upload_comments_file
-from src.app.services.youtube_media_pipeline import (
+from src.app.services.external_media.youtube_media_pipeline import (
     YouTubeQuotaExceededError,
     download_audio,
     download_comments,
+    download_transcript,
+    health_check,
     search_youtube_videos,
 )
-from src.scripts.load_products_to_db import load_products_to_db
+from src.app.services.storage.s3_storage import upload_audio_file, upload_comments_file
+from src.scripts.database.load_products_to_db import load_products_to_db
 
 
 def classify_phone(product_name: str) -> str:

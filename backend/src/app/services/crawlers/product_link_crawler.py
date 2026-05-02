@@ -1,3 +1,8 @@
+"""
+Crawler để lấy danh sách các URL sản phẩm điện thoại được thu thập từ trang web mục tiêu (ở đây là MobileCity)
+Output: backend/data/raw/product_links.json
+"""
+
 from collections.abc import Sequence
 import re
 import time
