@@ -1,4 +1,6 @@
 from pathlib import Path
+import re
+import logging
 
 import boto3
 
@@ -15,77 +17,115 @@ def _build_s3_client():
     return boto3.client("s3", **client_kwargs)
 
 
-def _build_s3_key(prefix: str, product_id: int, filename: str) -> str:
+def _build_s3_key(prefix: str, product_name: str, filename: str) -> str:
     normalized_prefix = prefix.strip("/").strip()
+    safe_product_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", product_name).strip("_").lower()
     if normalized_prefix:
-        return f"{normalized_prefix}/{product_id}/{filename}"
-    return f"{product_id}/{filename}"
+        return f"{normalized_prefix}/{safe_product_name}/{filename}"
+    return f"{safe_product_name}/{filename}"
 
 
 def _storage_file_stem(storage_id: int | str) -> str:
     return str(storage_id).strip() or "asset"
 
 
-def build_transcript_key(product_id: int, storage_id: int | str) -> str:
+def build_transcript_key(product_name: str, storage_id: int | str) -> str:
     stem = _storage_file_stem(storage_id)
     return _build_s3_key(
         prefix=settings.aws_s3_transcripts_prefix,
-        product_id=product_id,
-        filename=f"{stem}_transcript.txt",
+        product_name=product_name,
+        filename=f"{stem}_transcript.json",
     )
 
 
-def build_comments_key(product_id: int, storage_id: int | str) -> str:
+def build_comments_key(product_name: str, storage_id: int | str) -> str:
     stem = _storage_file_stem(storage_id)
     return _build_s3_key(
         prefix=settings.aws_s3_comments_prefix,
-        product_id=product_id,
+        product_name=product_name,
         filename=f"{stem}_comments.csv",
     )
 
 
-def build_audio_key(product_id: int, storage_id: int | str, extension: str) -> str:
+def build_audio_key(product_name: str, storage_id: int | str, extension: str) -> str:
     safe_extension = extension.lstrip(".") or "mp3"
     stem = _storage_file_stem(storage_id)
     return _build_s3_key(
         prefix=settings.aws_s3_audio_prefix,
-        product_id=product_id,
+        product_name=product_name,
         filename=f"{stem}_audio.{safe_extension}",
     )
 
 
-def upload_transcript_file(local_path: str, product_id: int, storage_id: int | str) -> str:
-    if not settings.aws_s3_bucket:
-        raise ValueError("Missing AWS_S3_BUCKET in environment.")
+def upload_audio_file(file_path: str, product_name: str, storage_id: int | str) -> str:
+    path_obj = Path(file_path)
+    if not path_obj.exists():
+        raise FileNotFoundError(f"Không tìm thấy file: {file_path}")
+    s3_key = build_audio_key(product_name, storage_id, path_obj.suffix)
+    _build_s3_client().upload_file(str(path_obj), settings.aws_s3_bucket, s3_key)
+    return f"s3://{settings.aws_s3_bucket}/{s3_key}"
 
-    key = build_transcript_key(product_id=product_id, storage_id=storage_id)
+
+def upload_comments_file(file_path: str, product_name: str, storage_id: int | str) -> str:
+    path_obj = Path(file_path)
+    if not path_obj.exists():
+        raise FileNotFoundError(f"Không tìm thấy file: {file_path}")
+    s3_key = build_comments_key(product_name, storage_id)
+    _build_s3_client().upload_file(str(path_obj), settings.aws_s3_bucket, s3_key)
+    return f"s3://{settings.aws_s3_bucket}/{s3_key}"
+
+
+def upload_transcript_file(file_path: str, product_name: str, storage_id: int | str) -> str:
+    path_obj = Path(file_path)
+    if not path_obj.exists():
+        raise FileNotFoundError(f"Không tìm thấy file: {file_path}")
+    s3_key = build_transcript_key(product_name, storage_id)
+    _build_s3_client().upload_file(str(path_obj), settings.aws_s3_bucket, s3_key)
+    return f"s3://{settings.aws_s3_bucket}/{s3_key}"
+
+def delete_product_files_from_s3(product_name: str, logger: logging.Logger | None = None) -> int:
+    import logging
+    log = logger or logging.getLogger("media_pipeline.s3")
+
+    safe_product_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", product_name).strip("_").lower()
     s3_client = _build_s3_client()
-    s3_client.upload_file(local_path, settings.aws_s3_bucket, key)
-    return f"s3://{settings.aws_s3_bucket}/{key}"
 
+    prefixes = [
+        f"{settings.aws_s3_audio_prefix}/{safe_product_name}/",
+        f"{settings.aws_s3_comments_prefix}/{safe_product_name}/",
+        f"{settings.aws_s3_transcripts_prefix}/{safe_product_name}/",
+    ]
 
-def upload_comments_file(local_path: str, product_id: int, storage_id: int | str) -> str:
-    if not settings.aws_s3_bucket:
-        raise ValueError("Missing AWS_S3_BUCKET in environment.")
+    deleted = 0
+    for prefix in prefixes:
+        paginator = s3_client.get_paginator("list_object_versions")
+        for page in paginator.paginate(Bucket=settings.aws_s3_bucket, Prefix=prefix):
+            objects_to_delete = [
+                {"Key": v["Key"], "VersionId": v["VersionId"]}
+                for v in page.get("Versions", [])
+            ] + [
+                {"Key": m["Key"], "VersionId": m["VersionId"]}
+                for m in page.get("DeleteMarkers", [])
+            ]
 
-    key = build_comments_key(product_id=product_id, storage_id=storage_id)
-    s3_client = _build_s3_client()
-    s3_client.upload_file(local_path, settings.aws_s3_bucket, key)
-    return f"s3://{settings.aws_s3_bucket}/{key}"
+            if not objects_to_delete:
+                continue
 
+            log.debug(f"Deleting {len(objects_to_delete)} objects under prefix={prefix}")
 
-def upload_audio_file(local_path: str, product_id: int, storage_id: int | str) -> str:
-    if not settings.aws_s3_bucket:
-        raise ValueError("Missing AWS_S3_BUCKET in environment.")
+            response = s3_client.delete_objects(
+                Bucket=settings.aws_s3_bucket,
+                Delete={"Objects": objects_to_delete},
+            )
 
-    extension = Path(local_path).suffix
-    key = build_audio_key(product_id=product_id, storage_id=storage_id, extension=extension)
-    s3_client = _build_s3_client()
-    s3_client.upload_file(local_path, settings.aws_s3_bucket, key)
-    return f"s3://{settings.aws_s3_bucket}/{key}"
+            for err in response.get("Errors", []):
+                log.warning(
+                    f"S3 delete failed: Key={err.get('Key')} "
+                    f"Code={err.get('Code')} Message={err.get('Message')}"
+                )
 
+            actually_deleted = len(response.get("Deleted", []))
+            deleted += actually_deleted
+            log.debug(f"Deleted {actually_deleted}/{len(objects_to_delete)} objects")
 
-def ensure_local_file_exists(local_path: str) -> None:
-    file_path = Path(local_path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"File not found: {local_path}")
+    return deleted

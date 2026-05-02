@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     aws_session_token: str = ""
 
     youtube_data_api_key: str = ""
-    youtube_max_results_per_product: int = 1
+    youtube_max_results_per_product: int = 30
 
     llm_provider: str = "gemini"
     llm_api_key: str = ""
@@ -28,14 +28,13 @@ class Settings(BaseSettings):
     mobilecity_csrf_token: str = ""
     mobilecity_max_pages_per_slug: int = 60
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra='ignore')
 
     @property
     def db_url(self) -> str:
         return (
-            f"postgresql+psycopg://{self.db_user}:{self.db_password}"
+            f"postgresql+psycopg2://{self.db_user}:{self.db_password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
-
 
 settings = Settings()

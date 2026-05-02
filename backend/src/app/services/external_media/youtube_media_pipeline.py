@@ -1,11 +1,12 @@
 import csv
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 import requests
-
+from youtube_transcript_api import YouTubeTranscriptApi
 
 YOUTUBE_SEARCH_ENDPOINT = "https://www.googleapis.com/youtube/v3/search"
 
@@ -58,12 +59,15 @@ def _ensure_yt_dlp_available() -> None:
 
 
 def search_youtube_videos(
-    product_name: str, api_key: str, max_results: int = 1, *, verbose: bool = True
+    product_name: str,
+    api_key: str,
+    max_results: int = 5,
+    verbose: bool = False,
 ) -> list[dict]:
     if not api_key:
         raise ValueError("Missing YOUTUBE_DATA_API_KEY in environment.")
 
-    # YouTube Data API search.list allows at most 50 results per request.
+    # YouTube Data API search.list allows at most 50 results per request, but we cap it at 30.
     effective_max_results = max(1, min(max_results, 50))
     query_preview = f"review {product_name}"
     if len(query_preview) > 120:
@@ -79,6 +83,7 @@ def search_youtube_videos(
         "type": "video",
         "maxResults": effective_max_results,
         "order": "relevance",
+        "regionCode": "VN",
         "key": api_key,
     }
     response = requests.get(YOUTUBE_SEARCH_ENDPOINT, params=params, timeout=20)
@@ -194,3 +199,44 @@ def download_comments(video_url: str, output_stem: Path, *, verbose: bool = True
 
     _yt_log(verbose, f"[INFO] yt-dlp comments done count={len(comments)} csv={csv_path}")
     return csv_path, comments
+
+
+def download_transcript(
+    video_id: str,
+    output_stem: Path,
+    *,
+    languages: list[str] = ['vi', 'en'],
+    verbose: bool = True,
+) -> tuple[Path, list[dict]]:
+    output_stem.parent.mkdir(parents=True, exist_ok=True)
+    json_path = output_stem.with_name(output_stem.name + "_transcript.json")
+
+    _yt_log(verbose, f"[INFO] Fetching transcript for video_id={video_id}")
+    try:
+        api = YouTubeTranscriptApi()
+
+        # Thử lấy ngôn ngữ ưu tiên trước
+        try:
+            fetched = api.fetch(video_id, languages=languages)
+            lang_used = "preferred"
+        except Exception:
+            # Fallback: lấy danh sách transcript available rồi lấy cái đầu tiên
+            transcript_list = api.list(video_id)
+            first_transcript = next(iter(transcript_list))
+            fetched = first_transcript.fetch()
+            lang_used = first_transcript.language_code
+
+        transcript = [
+            {"text": snippet.text, "start": snippet.start, "duration": snippet.duration}
+            for snippet in fetched
+        ]
+    except Exception as exc:
+        raise RuntimeError(f"Failed to fetch transcript: {exc}")
+
+    json_path.write_text(
+        json.dumps(transcript, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    _yt_log(verbose, f"[INFO] transcript fetch done lang={lang_used} count={len(transcript)} json={json_path}")
+
+    return json_path, transcript

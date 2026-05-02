@@ -103,3 +103,48 @@ python -m src.scripts.database.load_products_to_db
 1. **Idempotent Load**: Việc nạp lại một lượt dữ liệu `final_ready_to_load_specs.json` có thể dẫn đến việc trùng lặp (duplicate PK hoặc thông tin) nếu không cẩn trọng trong code Load_Script. (Hiện tại RDS cần được cấu hình UPSERT tùy thuộc vào logic của project).
 2. **PostgreSQL Size**: File JSON 1,500 records dung lượng nhỏ, nhưng phần Text Dimension có nội dung cực kì lớn, nên hãy để ý Indexing phù hợp phục vụ AI tra cứu về sau. Tương lai ta có thể thêm Extension `pgvector` vào RDS nếu làm RAG.
 3. **Sao lưu**: Hãy config AWS RDS tự động backup hằng ngày để không bị mất dữ liệu quý giá này nếu thao tác nhầm!
+
+---
+
+# Database Scripts
+
+> Thư mục này chứa các script chịu trách nhiệm nạp dữ liệu (sau khi đã được cào và xử lý) vào PostgreSQL Database trên Amazon RDS. 
+
+---
+
+## `load_products_to_db.py`
+- **Mục đích**: 
+  Nạp (load) thông tin sản phẩm và cấu hình kỹ thuật vào các bảng Fact và Dimension chuẩn. File dữ liệu được tự động nạp mặc định là dữ liệu đã qua các bước lọc trùng và chuẩn hóa tên (file `final_ready_to_load_specs.json`).
+- **Cách chạy**:
+
+  ```bash
+  # Chạy nạp dữ liệu (theo mặc định sẽ truncate/xóa dữ liệu cũ, chỉ dùng cho việc reset mới hoàn toàn)
+  python -m src.scripts.database.load_products_to_db
+
+  # Chạy nạp dữ liệu nhưng muốn giữ nguyên dữ liệu gốc trong database (chỉ chèn thêm sản phẩm vắng mặt/những sản phẩm chưa có)
+  python -m src.scripts.database.load_products_to_db --append
+
+  # Truyền đường dẫn file spec thủ công
+  python -m src.scripts.database.load_products_to_db --specs duong/dan/den/file.json
+  ```
+
+- **Log Minh họa**:
+
+```bash
+[INFO] Truncated YouTube tables, product dims, and fact_product.
+[INFO] Loading progress 100/1447 inserted=100 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 200/1447 inserted=200 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 300/1447 inserted=300 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 400/1447 inserted=400 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 500/1447 inserted=500 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 600/1447 inserted=600 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 700/1447 inserted=700 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 800/1447 inserted=800 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 900/1447 inserted=900 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 1000/1447 inserted=1000 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 1100/1447 inserted=1100 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 1200/1447 inserted=1200 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 1300/1447 inserted=1300 skipped_existing=0 skipped_malformed=0
+[INFO] Loading progress 1400/1447 inserted=1400 skipped_existing=0 skipped_malformed=0
+[INFO] Inserted 1447 products into DB.
+```
