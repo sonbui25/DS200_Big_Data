@@ -1,0 +1,48 @@
+x-worker-base: &worker-base
+  build:
+    context: .
+    dockerfile: Dockerfile.media_worker
+  env_file:
+    - ./backend/.env
+  environment:
+    - TZ=Asia/Ho_Chi_Minh
+    - PYTHONUNBUFFERED=1
+  volumes:
+    - ./backend/data:/app/data
+  restart: "no"
+
+services:
+  media-worker:
+    <<: *worker-base
+    container_name: script_media_worker
+
+    command: ["python", "-m", "src.scripts.media.run_unique_smartphone_media_flow", "--workers", "12", "--max-products", "50"]
+    profiles: ["media"]
+    # Thêm logging giới hạn size để tránh đầy disk trên VPS
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  crawl-links-worker:
+    <<: *worker-base
+    container_name: script_crawl_links
+    command: ["python", "-m", "src.scripts.collection.run_crawl_product_links"]
+    profiles: ["crawl"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  db-bootstrap-worker:
+    <<: *worker-base
+    container_name: script_db_bootstrap
+    command: ["python", "-m", "src.scripts.database.bootstrap_db"]
+    profiles: ["db"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"

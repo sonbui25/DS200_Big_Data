@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Python
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+dist/
+build/
+
+# Data (dùng volume mount)
+backend/data/
+data/
+
+# IDE
+.vscode
+.idea
+*.DS_Store
+
+# Env files
+.env
+backend/.env
+
+# Docker files (không cần copy vào image)
+Dockerfile*
+docker-compose*.yml
+*.dockerignore
+
+# Logs
+*.log
