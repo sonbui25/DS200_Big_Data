@@ -31,6 +31,10 @@ from ._media_db import (
 )
 from ._media_cleaner import clear_all
 
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from ._api_key_pool import YouTubeApiKeyPool
+
 TRACKING_FILE = Path("data/processed/media_completed_products.json")
 
 
@@ -71,13 +75,17 @@ def load_tracking_file() -> set[str]:
     return set()
 
 
-def save_completed_product(product_name: str) -> None:
-    completed = load_tracking_file()
-    completed.add(product_name)
-    TRACKING_FILE.parent.mkdir(parents=True, exist_ok=True)
-    TRACKING_FILE.write_text(
-        json.dumps(list(completed), ensure_ascii=False, indent=4), encoding="utf-8"
-    )
+_tracking_lock = threading.Lock()
+
+def save_completed_product(product_name: str, completed_products: set[str]) -> None:
+    """Thread-safe: dùng lock trước khi đọc/ghi file."""
+    with _tracking_lock:
+        completed_products.add(product_name)
+        TRACKING_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TRACKING_FILE.write_text(
+            json.dumps(sorted(completed_products), ensure_ascii=False, indent=4),
+            encoding="utf-8",
+        )
 
 
 def rebuild_tracking_file_from_db() -> None:
@@ -119,17 +127,25 @@ def process_single_product_youtube_media(
     product_name: str,
     media_dir: Path,
     youtube_verbose: bool,
+    api_key_pool: YouTubeApiKeyPool,      # ← thêm
 ) -> tuple[int, int, int]:
-    """Trả về (videos_hit, uploads, comments_inserted)."""
     logger, log_path, s3_handler = setup_pipeline_logger(media_dir, product_name=product_name)
     logger.info(f"Start processing product_id={product_id} name={product_name!r}")
 
-    videos = search_youtube_videos(
-        product_name=product_name,
-        api_key=settings.youtube_data_api_key,
-        max_results=settings.youtube_max_results_per_product,
-        verbose=youtube_verbose,
-    )
+    # Retry search khi key hết quota
+    while True:
+        try:
+            videos = search_youtube_videos(
+                product_name=product_name,
+                api_key=api_key_pool.current_key,   # ← dùng pool
+                max_results=settings.youtube_max_results_per_product,
+                verbose=youtube_verbose,
+            )
+            break
+        except YouTubeQuotaExceededError:
+            # Rotate sang key tiếp — nếu hết tất cả keys thì raise lên
+            api_key_pool.mark_exhausted(api_key_pool.current_key, logger=logger)
+
     if not videos:
         logger.info("Done: hits=0 upl=0 comms=0")
         s3_handler.flush_now()
@@ -166,7 +182,7 @@ def process_single_product_youtube_media(
             logger.info(f"  [{video_index}/{len(videos)}] id={yt_watch_id} title={title_pv!r}")
 
         try:
-            audio_path        = download_audio(youtube_url, audio_dir / indexed_title, verbose=youtube_verbose)
+            audio_path = download_audio(youtube_url, audio_dir / indexed_title, verbose=youtube_verbose)
             comments_csv_path, comments = download_comments(youtube_url, comments_dir / indexed_title, verbose=youtube_verbose)
         except (RuntimeError, FileNotFoundError) as exc:
             logger.warning(f"  yt-dlp failed id={yt_watch_id}: {exc}")
@@ -186,6 +202,16 @@ def process_single_product_youtube_media(
                 if transcript_json_path else None
             )
             upl += 1
+
+            # Xóa local ngay sau khi upload S3 thành công
+            for local_file in [audio_path, comments_csv_path, transcript_json_path]:
+                if local_file and Path(local_file).exists():
+                    Path(local_file).unlink()
+            # Xóa .info.json của yt-dlp (không upload lên S3)
+            info_json = comments_dir / f"{indexed_title}.info.json"
+            if info_json.exists():
+                info_json.unlink()
+
         except Exception as exc:
             logger.warning(f"  S3 upload failed id={yt_watch_id}: {exc}")
             continue
@@ -197,35 +223,80 @@ def process_single_product_youtube_media(
         except Exception as exc:
             logger.warning(f"  DB insert failed id={yt_watch_id}: {exc}")
 
+    # Xóa các subfolder rỗng sau khi xử lý xong product
+    for d in [audio_dir, comments_dir, transcripts_dir]:
+        try:
+            if d.exists() and not any(d.iterdir()):
+                d.rmdir()
+        except Exception:
+            pass
+
     logger.info(f"Done: hits={hits} upl={upl} comms={comms}")
     s3_handler.flush_now()
-
     return hits, upl, comms
 
-
 # ── Pipeline ──────────────────────────────────────────────────────────────────
+
+def _process_one_product(
+    index: int,
+    total: int,
+    product_id: int,
+    product_name: str,
+    media_dir: Path,
+    youtube_verbose: bool,
+    completed_products: set[str],
+    api_key_pool: YouTubeApiKeyPool,
+    pipeline_logger,
+) -> tuple[int, int, int]:
+    """Wrapper chạy trong thread riêng."""
+    pipeline_logger.info(f"[{index}/{total}] >>> Processing: {product_name!r} (ID={product_id})")
+    clear_all(product_id, product_name, media_dir, logger=pipeline_logger)
+
+    try:
+        hits, upl, comms = process_single_product_youtube_media(
+            product_id, product_name, media_dir, youtube_verbose,
+            api_key_pool=api_key_pool,
+        )
+        if hits > 0 or not settings.youtube_api_key_list:
+            save_completed_product(product_name, completed_products)
+        pipeline_logger.info(
+            f"[{index}/{total}] Finished: {product_name!r} "
+            f"hits={hits} upl={upl} comms={comms}"
+        )
+        return hits, upl, comms
+    except YouTubeQuotaExceededError:
+        raise  # Bubble up để ThreadPoolExecutor bắt
+    except Exception as exc:
+        pipeline_logger.error(f"[{index}/{total}] Failed {product_name!r}: {exc}")
+        traceback.print_exc()
+        return 0, 0, 0
+
 
 def run_pipeline(
     specs_path: Path,
     media_dir: Path,
     max_products: int | None,
     youtube_verbose: bool,
-    checkpoint_path: Path,
-    resume: bool,
     test_mode: bool = False,
+    max_workers: int = 3,           # ← thêm
 ) -> None:
-    
-    # Logger tổng cho cả pipeline run
     pipeline_logger, pipeline_log_path, pipeline_s3 = setup_pipeline_logger(media_dir)
 
-    # Force flush khi bị Ctrl+C
     def _on_interrupt(sig, frame):
-        pipeline_logger.warning("Pipeline interrupted by user (SIGINT). Flushing logs...")
+        pipeline_logger.warning("Interrupted (SIGINT). Flushing logs...")
         pipeline_s3.flush_now()
         sys.exit(1)
     signal.signal(signal.SIGINT, _on_interrupt)
 
-    pipeline_logger.info(f"Pipeline started: specs={specs_path} max_products={max_products}")
+    pipeline_logger.info(f"Pipeline started: specs={specs_path} max_products={max_products} workers={max_workers}")
+
+    # Khởi tạo API key pool
+    api_keys = settings.youtube_api_key_list
+    if not api_keys:
+        pipeline_logger.error("Không có API key nào. Kiểm tra YOUTUBE_DATA_API_KEYS trong .env")
+        return
+    api_key_pool = YouTubeApiKeyPool(api_keys)
+    pipeline_logger.info(f"API Key Pool: {len(api_keys)} keys — {[f'...{k[-6:]}' for k in api_keys]}")
 
     specs_records = read_json_records(specs_path)
     if max_products is not None:
@@ -234,7 +305,7 @@ def run_pipeline(
         pipeline_logger.warning("No records to process.")
         return
 
-    pipeline_logger.info(f"Input={len(specs_records)} records ready for pipeline.")
+    pipeline_logger.info(f"Input={len(specs_records)} records ready.")
 
     product_names = [
         record.get("search_query_name") or (record.get("fact_product") or {}).get("product_name")
@@ -246,98 +317,76 @@ def run_pipeline(
         pipeline_logger.warning("No products found in DB. Run DB Load script first.")
         return
 
+    # Load tracking vào memory — các thread share qua lock
     completed_products = load_tracking_file()
-    pipeline_logger.info(f"Loaded {len(completed_products)} completed products from tracking file.")
+    pipeline_logger.info(f"Loaded {len(completed_products)} completed products.")
+
+    media_dir.mkdir(parents=True, exist_ok=True)
+    total = len(specs_records)
+
+    # Lọc pending — bỏ qua completed
+    pending = []
+    for index, record in enumerate(specs_records, start=1):
+        name = record.get("search_query_name") or (record.get("fact_product") or {}).get("product_name")
+        if not name or not product_id_index.get(name) or name in completed_products:
+            continue
+        pending.append((index, product_id_index[name], name))
+
+    pipeline_logger.info(f"Pending: {len(pending)} products to process.")
+
+    if test_mode:
+        pending = pending[:1]
+        pipeline_logger.info("TEST MODE: chỉ xử lý 1 product.")
 
     youtube_hits = media_uploaded = comments_inserted = 0
-    media_dir.mkdir(parents=True, exist_ok=True)
-    total_products  = len(specs_records)
-    checkpoint_key  = _build_checkpoint_key(specs_path, max_products)
-    last_completed_index = 0
 
-    if resume:
-        checkpoint_data = _read_checkpoint(checkpoint_path)
-        if checkpoint_data and checkpoint_data.get("checkpoint_key") == checkpoint_key:
-            last_completed_index = int(checkpoint_data.get("last_completed_index") or 0)
-            pipeline_logger.info(f"Resume: bỏ qua 1..{last_completed_index}.")
-        elif checkpoint_data:
-            pipeline_logger.warning("Checkpoint không khớp; bỏ qua --resume.")
-
-    def persist(idx: int) -> None:
-        _write_checkpoint(checkpoint_path, {"version": 1, "checkpoint_key": checkpoint_key, "last_completed_index": idx})
-
-    for index, record in enumerate(specs_records, start=1):
-        product_name = record.get("search_query_name") or (record.get("fact_product") or {}).get("product_name")
-        if not product_name:
-            continue
-        product_id = product_id_index.get(product_name)
-        if not product_id:
-            continue
-        if product_name in completed_products:
-            pipeline_logger.info(f"[{index}/{total_products}] Skip (completed) id={product_id} name={product_name!r}")
-            continue
-        if index <= last_completed_index:
-            if youtube_verbose:
-                pipeline_logger.info(f"[{index}/{total_products}] Skip (resume) id={product_id}")
-            continue
-
-        pipeline_logger.info(f"[{index}/{total_products}] >>> Processing: {product_name!r} (ID={product_id})")
-        clear_all(product_id, product_name, media_dir, logger=pipeline_logger)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _process_one_product,
+                index, total, product_id, product_name,
+                media_dir, youtube_verbose,
+                completed_products, api_key_pool, pipeline_logger,
+            ): product_name
+            for index, product_id, product_name in pending
+        }
 
         try:
-            hits, upl, comms = process_single_product_youtube_media(product_id, product_name, media_dir, youtube_verbose)
-            youtube_hits     += hits
-            media_uploaded   += upl
-            comments_inserted += comms
+            for future in as_completed(futures):
+                product_name = futures[future]
+                try:
+                    hits, upl, comms = future.result()
+                    youtube_hits      += hits
+                    media_uploaded    += upl
+                    comments_inserted += comms
+                except YouTubeQuotaExceededError as exc:
+                    pipeline_logger.error(f"Tất cả API keys hết quota: {exc}")
+                    pipeline_logger.info("Huỷ các task còn lại. Chạy lại sau.")
+                    for f in futures:
+                        f.cancel()
+                    break
+                except Exception as exc:
+                    pipeline_logger.error(f"Unexpected error for {product_name!r}: {exc}")
+        finally:
+            pipeline_s3.flush_now()
 
-            pipeline_logger.info(
-                f"[{index}/{total_products}] Done: {product_name!r} "
-                f"hits={hits} upl={upl} comms={comms}"
-            )
-
-            if hits > 0 or not settings.youtube_data_api_key:
-                save_completed_product(product_name)
-                completed_products.add(product_name)
-
-            if resume:
-                persist(index)
-            if test_mode:
-                pipeline_logger.info(f"[TEST MODE] Done 1 product '{product_name}'. Exiting.")
-                break
-
-        except YouTubeQuotaExceededError as exc:
-            pipeline_logger.error(f"YouTube Quota Exceeded: {exc}")
-            pipeline_logger.info(f"Stopped at index={index}. Run with --resume later.")
-            sys.exit(1)
-        except Exception as exc:
-            pipeline_logger.error(f"Failed product_id={product_id}: {exc}")
-            traceback.print_exc()
-
-    if checkpoint_path.exists():
-        tail = _read_checkpoint(checkpoint_path)
-        if tail and tail.get("checkpoint_key") == checkpoint_key:
-            checkpoint_path.unlink(missing_ok=True)
-            pipeline_logger.info("Đã xóa checkpoint.")
-
-    # Cuối pipeline
     pipeline_logger.info(
         f"Pipeline done: youtube_hits={youtube_hits} "
         f"media_uploaded={media_uploaded} comments_inserted={comments_inserted}"
     )
-    upload_log_to_s3(pipeline_log_path)
+    pipeline_s3.flush_now()
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest YouTube media for products → S3 + DB.")
-    parser.add_argument("--specs",           default="data/processed/final_ready_to_load_specs.json")
-    parser.add_argument("--media-dir",       default="data/processed/youtube_media")
-    parser.add_argument("--max-products",    type=int, default=None)
-    parser.add_argument("--quiet-youtube",   action="store_true")
-    parser.add_argument("--checkpoint-file", default="data/processed/youtube_media/youtube_media_checkpoint.json")
-    parser.add_argument("--resume",          action="store_true")
-    parser.add_argument("--rebuild-tracking", action="store_true", help="Rebuild tracking file từ DB rồi thoát.")
-    parser.add_argument("--test",            action="store_true", help="Chỉ xử lý 1 product rồi dừng.")
+    parser.add_argument("--specs",            default="data/processed/final_ready_to_load_specs.json")
+    parser.add_argument("--media-dir",        default="data/processed/youtube_media")
+    parser.add_argument("--max-products",     type=int, default=None)
+    parser.add_argument("--quiet-youtube",    action="store_true")
+    parser.add_argument("--workers",          type=int, default=3, help="Số product xử lý song song.")
+    parser.add_argument("--rebuild-tracking", action="store_true")
+    parser.add_argument("--test",             action="store_true")
     args = parser.parse_args()
 
     if args.rebuild_tracking:
@@ -350,9 +399,8 @@ def main() -> None:
             media_dir=Path(args.media_dir),
             max_products=args.max_products,
             youtube_verbose=not args.quiet_youtube,
-            checkpoint_path=Path(args.checkpoint_file),
-            resume=args.resume,
             test_mode=args.test,
+            max_workers=args.workers,
         )
     except YouTubeQuotaExceededError:
         sys.exit(5)
