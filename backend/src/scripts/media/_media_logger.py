@@ -94,8 +94,27 @@ def setup_pipeline_logger(
     flush_every: int = 10,
 ) -> tuple[logging.Logger, Path, S3FlushHandler]:
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    log_dir = media_dir / "media_log" / date_str
+    
+    parent_log_dir = media_dir / "media_log"
+    parent_log_dir.mkdir(parents=True, exist_ok=True)
+
+    if not product_name: 
+        # Khởi tạo pipeline: Luôn tạo thư mục mới nếu thư mục mặc định đã tồn tại
+        log_dir = parent_log_dir / date_str
+        idx = 1
+        while log_dir.exists():
+            log_dir = parent_log_dir / f"{date_str}_{idx}"
+            idx += 1
+    else:
+        # Logging cho product: Lấy thư mục mới nhất của ngày hôm nay để ghi vào
+        log_dir = parent_log_dir / date_str
+        idx = 1
+        while (parent_log_dir / f"{date_str}_{idx}").exists():
+            log_dir = parent_log_dir / f"{date_str}_{idx}"
+            idx += 1
+
     log_dir.mkdir(parents=True, exist_ok=True)
+    real_date_str = log_dir.name # Lấy tên thực tế để đẩy lên s3: ví dụ: 2026-05-05_1
 
     if product_name:
         log_filename = f"{_safe_name(product_name)}.log"
@@ -103,7 +122,7 @@ def setup_pipeline_logger(
         log_filename = f"pipeline_{datetime.now(timezone.utc).strftime('%H%M%S')}.log"
 
     log_path = log_dir / log_filename
-    s3_key = f"media_log/{date_str}/{log_filename}"
+    s3_key = f"media_log/{real_date_str}/{log_filename}"
 
     logger = logging.getLogger(f"media_pipeline.{log_filename}")
     logger.setLevel(logging.DEBUG)
