@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     aws_secret_access_key: str = ""
     aws_session_token: str = ""
 
-    youtube_data_api_key: str = ""
+    youtube_data_api_keys: str = ""
     youtube_max_results_per_product: int = 30
 
     llm_provider: str = "gemini"
@@ -37,4 +37,9 @@ class Settings(BaseSettings):
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
 
+    @property
+    def youtube_api_key_list(self) -> list[str]:
+        """Parse chuỗi keys thành list, lọc key rỗng."""
+        return [k.strip() for k in self.youtube_data_api_keys.split(",") if k.strip()]
+    
 settings = Settings()
