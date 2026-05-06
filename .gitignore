@@ -223,3 +223,7 @@ data/
 # Test file
 test_normalization.py
 test_db.py
+
+# Cookies youtube
+www.youtube.com_06-05-2026.json
+cookies.txt

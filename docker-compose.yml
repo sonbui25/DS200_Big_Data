@@ -9,6 +9,7 @@ x-worker-base: &worker-base
     - PYTHONUNBUFFERED=1
   volumes:
     - ./backend/data:/app/data
+    - ./cookies.txt:/app/cookies.txt
   restart: "no"
 
 services:
@@ -16,7 +17,7 @@ services:
     <<: *worker-base
     container_name: script_media_worker
 
-    command: ["python", "-m", "src.scripts.media.run_unique_smartphone_media_flow", "--workers", "12", "--max-products", "50"]
+    command: ["python", "-m", "src.scripts.media.run_unique_smartphone_media_flow", "--workers", "12", "--max-products", "200"]
     profiles: ["media"]
     # Thêm logging giới hạn size để tránh đầy disk trên VPS
     logging:

@@ -29,21 +29,31 @@ def _get_yt_dlp_js_runtime_args(*, verbose: bool) -> list[str]:
     yt-dlp YouTube extraction increasingly requires a JS runtime (node/deno).
     Prefer node if available, otherwise deno if available; otherwise return empty.
     """
+    args = []
+    
+    # Check for cookies file
+    cookies_path = Path("cookies.txt")
+    if cookies_path.exists():
+        _yt_log(verbose, "[INFO] yt-dlp using cookies from cookies.txt")
+        args.extend(["--cookies", str(cookies_path)])
+
     node_path = shutil.which("node")
     if node_path:
         _yt_log(verbose, "[INFO] yt-dlp JS runtime: node")
-        return ["--js-runtimes", "node"]
+        args.extend(["--js-runtimes", "node"])
+        return args
 
     deno_path = shutil.which("deno")
     if deno_path:
         _yt_log(verbose, "[INFO] yt-dlp JS runtime: deno")
-        return ["--js-runtimes", "deno"]
+        args.extend(["--js-runtimes", "deno"])
+        return args
 
     _yt_log(
         verbose,
         "[WARN] yt-dlp JS runtime not found (node/deno). YouTube extraction may fail; install Node.js or Deno.",
     )
-    return []
+    return args
 
 
 def _run_command(command: list[str]) -> None:
@@ -133,18 +143,18 @@ def download_audio(video_url: str, output_stem: Path, *, verbose: bool = True) -
     _yt_log(verbose, f"[INFO] yt-dlp extract audio url={video_url} out={output_stem}.mp3")
     js_runtime_args = _get_yt_dlp_js_runtime_args(verbose=verbose)
     _run_command(
-        [
-            "yt-dlp",
-            *js_runtime_args,
-            "-x",
-            "--audio-format",
-            "mp3",
-            "--audio-quality",
-            "0",
-            "-o",
-            output_template,
-            video_url,
-        ]
+    [
+        "yt-dlp",
+        *js_runtime_args,
+        "--remote-components", "ejs:github",   # ← thêm dòng này
+        "--sleep-interval", "5",
+        "--max-sleep-interval", "10",
+        "-x",
+        "--audio-format", "mp3",
+        "--audio-quality", "0",
+        "-o", output_template,
+        video_url,
+    ]
     )
     audio_path = output_stem.with_suffix(".mp3")
     if not audio_path.exists():
@@ -161,16 +171,18 @@ def download_comments(video_url: str, output_stem: Path, *, verbose: bool = True
     _yt_log(verbose, f"[INFO] yt-dlp fetch comments+metadata url={video_url}")
     js_runtime_args = _get_yt_dlp_js_runtime_args(verbose=verbose)
     _run_command(
-        [
-            "yt-dlp",
-            *js_runtime_args,
-            "--skip-download",
-            "--write-info-json",
-            "--write-comments",
-            "-o",
-            output_template,
-            video_url,
-        ]
+    [
+        "yt-dlp",
+        *js_runtime_args,
+        "--remote-components", "ejs:github",   # ← thêm dòng này
+        "--sleep-interval", "5",
+        "--max-sleep-interval", "10",
+        "--skip-download",
+        "--write-info-json",
+        "--write-comments",
+        "-o", output_template,
+        video_url,
+    ]
     )
 
     info_json_path = output_stem.with_suffix(".info.json")

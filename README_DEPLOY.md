@@ -29,12 +29,17 @@ Với kiến trúc Multi-Service Scripts, bạn có thể gọi đích danh pipe
 ```bash
 docker compose --profile media up -d --build media-worker
 ```
+> **Giải thích lệnh**:
+> - `--profile media`: Kích hoạt cấu hình (service) được đánh dấu thuộc profile "media" (cụ thể là `media-worker`).
+> - `up`: Lệnh khởi tạo và chạy các containers.
+> - `-d` (detached): Yêu cầu tiến trình chạy ngầm ở background, để bạn có thể tiếp tục dùng terminal.
+> - `--build`: Cưỡng chế Docker build lại Image (cài `ffmpeg`, `nodejs`, `requirements.txt`) để nắm bắt code/thư viện mới nhất trước khi chạy.
+> - `media-worker`: Tên đích danh của container cần khởi chạy được định nghĩa trong `docker-compose.yml`.
 
 **Ví dụ chạy Crawl Worker (nếu có)**:
 ```bash
 docker compose --profile crawl up -d crawl-links-worker
 ```
-> **Lưu ý**: Lệnh trên sẽ tự động cài đặt hệ thống phụ trợ (ffmpeg, nodejs), các thư viện trong `requirements.txt` và khởi chạy pipeline. 
 
 ## 🛠 Quản lý & Theo dõi
 
@@ -42,11 +47,13 @@ docker compose --profile crawl up -d crawl-links-worker
   ```bash
   docker compose --profile media logs -f media-worker
   ```
+  *(Cờ `-f` hay `--follow` giữ cho terminal liên tục cập nhật dòng log mới mà không bị thoát, để thoát bạn bấm `Ctrl+C`)*
 
-- **Dừng tiến trình**:
+- **Dừng tiến trình khẩn cấp**:
   ```bash
-  docker compose down
+  docker compose --profile media down
   ```
+  *(Vì có flag `--profile media`, lệnh mới tìm thấy đúng container media-worker đang chạy để Shutdown)*
 
 - **Sử dụng các Flag khi chạy (ví dụ test Mode)**:
   Nếu bạn cần chạy chế độ `--test` (chỉ 1 sản phẩm) thay vì chạy lệnh mặc định của container, bạn hãy dùng:
