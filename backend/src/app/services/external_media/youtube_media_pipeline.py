@@ -147,6 +147,8 @@ def download_audio(video_url: str, output_stem: Path, *, verbose: bool = True) -
         "yt-dlp",
         *js_runtime_args,
         "--remote-components", "ejs:github",   # ← thêm dòng này
+        "--sleep-interval", "5",
+        "--max-sleep-interval", "10",
         "-x",
         "--audio-format", "mp3",
         "--audio-quality", "0",
@@ -173,6 +175,8 @@ def download_comments(video_url: str, output_stem: Path, *, verbose: bool = True
         "yt-dlp",
         *js_runtime_args,
         "--remote-components", "ejs:github",   # ← thêm dòng này
+        "--sleep-interval", "5",
+        "--max-sleep-interval", "10",
         "--skip-download",
         "--write-info-json",
         "--write-comments",
