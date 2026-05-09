@@ -1,4 +1,3 @@
-from pathlib import Path
 from sqlalchemy import func, select
 from src.app.database.connection import get_engine
 from src.app.database.models import dim_video_comments, dim_video_transcripts, fact_product
@@ -28,12 +27,23 @@ def count_videos_for_product(product_id: int) -> int:
     return int(row or 0)
 
 
+def get_existing_youtube_urls_for_product(product_id: int) -> set[str]:
+    """Trả về set các YouTube URL đã có trong DB cho product — dùng cho top-up để skip trùng."""
+    engine = get_engine()
+    with engine.connect() as connection:
+        rows = connection.execute(
+            select(dim_video_transcripts.c.youtube_url).where(
+                dim_video_transcripts.c.product_id == product_id
+            )
+        ).fetchall()
+    return {row[0] for row in rows}
+
+
 def insert_video_metadata(
     product_id: int,
     youtube_url: str,
     s3_audio_path: str,
     s3_comments_path: str,
-    s3_transcript_path: str,
 ) -> int:
     engine = get_engine()
     with engine.begin() as connection:
@@ -50,7 +60,6 @@ def insert_video_metadata(
                 youtube_url=youtube_url,
                 s3_audio_path=s3_audio_path,
                 s3_comments_path=s3_comments_path,
-                s3_transcript_path=s3_transcript_path,
             )
         )
     return insert_result.inserted_primary_key[0]
@@ -96,7 +105,7 @@ def delete_video_comments(video_ids: list[int]) -> None:
         )
 
 
-def delete_video_transcripts(product_id: int) -> None:
+def delete_videos_for_product(product_id: int) -> None:
     engine = get_engine()
     with engine.begin() as connection:
         connection.execute(

@@ -21,7 +21,8 @@ class Settings(BaseSettings):
 
     youtube_data_api_keys: str = ""
     youtube_max_results_per_product: int = 30
-
+    youtube_min_videos_per_product: int = 25
+    
     llm_provider: str = "gemini"
     llm_api_key: str = ""
     mobilecity_cookie: str = ""
