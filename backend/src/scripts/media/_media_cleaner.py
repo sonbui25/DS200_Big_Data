@@ -5,7 +5,7 @@ from pathlib import Path
 from unidecode import unidecode
 
 from src.app.services.storage.s3_storage import delete_product_files_from_s3
-from ._media_db import get_video_ids_for_product, delete_video_comments, delete_video_transcripts
+from ._media_db import get_video_ids_for_product, delete_video_comments, delete_videos_for_product
 
 _fallback_logger = logging.getLogger("media_pipeline.cleaner")
 
@@ -17,7 +17,7 @@ def _safe_product_name(product_name: str) -> str:
 def clear_db(product_id: int) -> None:
     video_ids = get_video_ids_for_product(product_id)
     delete_video_comments(video_ids)
-    delete_video_transcripts(product_id)
+    delete_videos_for_product(product_id)
 
 
 def clear_s3(product_name: str, logger: logging.Logger | None = None) -> int:
@@ -28,7 +28,7 @@ def clear_local(product_name: str, media_dir: Path, logger: logging.Logger | Non
     log = logger or _fallback_logger
     safe_name = _safe_product_name(product_name)
     deleted = 0
-    for subfolder in ["audio", "comments", "transcripts"]:
+    for subfolder in ["audio", "comments"]:
         product_dir = media_dir / subfolder / safe_name
         if product_dir.exists():
             shutil.rmtree(product_dir)
