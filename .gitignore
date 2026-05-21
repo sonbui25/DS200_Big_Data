@@ -227,3 +227,9 @@ test_db.py
 # Cookies youtube
 www.youtube.com_06-05-2026.json
 cookies.txt
+
+# classify comment dev phase
+.DS_Store
+backend/src/scripts/data_processing/Extract_transcript_from_audio.ipynb
+proposal_aspect_classification.md
+proposal_comment_aspect_classification.md
