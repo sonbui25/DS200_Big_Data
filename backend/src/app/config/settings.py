@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,7 +31,11 @@ class Settings(BaseSettings):
     mobilecity_csrf_token: str = ""
     mobilecity_max_pages_per_slug: int = 60
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra='ignore')
+    model_config = SettingsConfigDict(
+        env_file=str(Path(__file__).resolve().parents[3] / ".env"),
+        env_file_encoding="utf-8",
+        extra='ignore',
+    )
 
     @property
     def db_url(self) -> str:

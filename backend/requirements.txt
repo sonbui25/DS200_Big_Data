@@ -13,3 +13,6 @@ pydantic_settings
 psycopg
 youtube-transcript-api
 unidecode
+sentence-transformers
+pyvi
+langchain-text-splitters
