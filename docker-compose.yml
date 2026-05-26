@@ -47,3 +47,13 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+  embedding-worker:
+      <<: *worker-base
+      container_name: script_embedding_worker
+      command: ["python", "-m", "src.scripts.data_processing.embedding_comment"]
+      profiles: ["embedding"]
+      logging:
+        driver: "json-file"
+        options:
+          max-size: "50m"
+          max-file: "3"

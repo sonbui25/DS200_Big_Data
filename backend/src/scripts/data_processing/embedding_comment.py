@@ -416,7 +416,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Embed comments from dimension tables into comment_embeddings."
     )
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--truncate", action="store_true")
     parser.add_argument(
         "--tables",
