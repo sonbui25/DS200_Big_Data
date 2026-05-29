@@ -7,6 +7,8 @@ boto3
 python-dotenv
 langchain
 langchain-openai
+langchain-google-genai
+langgraph
 langsmith
 pydantic
 pydantic_settings
