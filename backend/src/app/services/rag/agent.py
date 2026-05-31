@@ -8,10 +8,12 @@ Public API:
 import logging
 from functools import lru_cache
 
+import uuid
 from langchain_core.messages import HumanMessage, trim_messages
 from langchain_openai import ChatOpenAI
-from langgraph_checkpoint_redis import RedisSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import create_react_agent
+import redis as redis_lib
 
 from src.app.config.settings import settings
 from src.app.services.rag.tools import (
@@ -87,9 +89,14 @@ Tự chọn và phối hợp các tool dựa trên mô tả của từng tool.
 
 
 @lru_cache(maxsize=1)
+def _redis() -> redis_lib.Redis:
+    return redis_lib.from_url(settings.redis_url, decode_responses=True)
+
+
+@lru_cache(maxsize=1)
 def build_agent():
     """Tạo agent 1 lần rồi tái dùng (lru_cache).
-    Dùng RedisSaver làm checkpointer — lịch sử lưu Redis thay vì RAM.
+    MemorySaver lưu state trong RAM, Redis quản lý TTL session.
     """
     llm = ChatOpenAI(
         model="gpt-4o-mini",
@@ -107,25 +114,33 @@ def build_agent():
         )
         return {"llm_input_messages": trimmed}
 
-    checkpointer = RedisSaver.from_conn_string(
-        settings.redis_url,
-        ttl={"default_collection_ttl": SESSION_TTL},
-    )
-    checkpointer.setup()
-
     return create_react_agent(
         llm,
         TOOLS,
         prompt=SYSTEM_PROMPT,
         pre_model_hook=pre_model_hook,
-        checkpointer=checkpointer,
+        checkpointer=MemorySaver(),
     )
 
 
+def _resolve_thread_id(session_id: str) -> str:
+    """TTL session qua Redis: hết 30 phút không dùng → thread_id mới → hội thoại reset."""
+    r = _redis()
+    key = f"rag:session:{session_id}"
+    thread_id = r.get(key)
+    if not thread_id:
+        thread_id = f"{session_id}:{uuid.uuid4().hex[:8]}"
+        r.set(key, thread_id, ex=SESSION_TTL)
+    else:
+        r.expire(key, SESSION_TTL)
+    return thread_id
+
+
 def chat(question: str, session_id: str = "default") -> str:
+    thread_id = _resolve_thread_id(session_id)
     agent = build_agent()
     result = agent.invoke(
         {"messages": [HumanMessage(content=question)]},
-        config={"configurable": {"thread_id": session_id}},
+        config={"configurable": {"thread_id": thread_id}},
     )
     return result["messages"][-1].content

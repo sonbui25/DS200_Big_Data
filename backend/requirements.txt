@@ -21,4 +21,4 @@ langchain-text-splitters
 fastapi
 uvicorn[standard]
 redis
-langgraph-checkpoint-redis
+redis
