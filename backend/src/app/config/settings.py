@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,9 +28,16 @@ class Settings(BaseSettings):
     
     llm_provider: str = "gemini"
     llm_api_key: str = ""
+    # Tái dùng key OpenAI sẵn có trong .env (vốn dùng cho name normalization) cho RAG agent.
+    openai_api_key: str = Field(
+        default="",
+        validation_alias="LLM_PROVIDER_FOR_NAME_NORMALIZATION_API_KEY",
+    )
     mobilecity_cookie: str = ""
     mobilecity_csrf_token: str = ""
     mobilecity_max_pages_per_slug: int = 60
+
+    redis_url: str = "redis://localhost:6379"
 
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parents[3] / ".env"),
