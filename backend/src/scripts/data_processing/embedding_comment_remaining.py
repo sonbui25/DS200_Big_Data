@@ -374,7 +374,7 @@ def main() -> None:
 			"into comment_embeddings. Appends only — never truncates."
 		),
 	)
-	parser.add_argument("--batch-size", type=int, default=512)
+	parser.add_argument("--batch-size", type=int, default=1024)
 	parser.add_argument(
 		"--max-comments",
 		type=int,
