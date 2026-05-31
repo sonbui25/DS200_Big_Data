@@ -81,5 +81,16 @@ services:
           max-size: "50m"
           max-file: "3"
 
+  embedding-remaining-worker:
+      <<: *worker-base
+      container_name: script_embedding_remaining
+      command: ["python", "-m", "src.scripts.data_processing.embedding_comment_remaining", "--max-comments", "3000"]
+      profiles: ["embedding-remaining"]
+      logging:
+        driver: "json-file"
+        options:
+          max-size: "50m"
+          max-file: "3"
+
 volumes:
   redis_data:
