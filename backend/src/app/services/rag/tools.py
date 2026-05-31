@@ -1,62 +1,17 @@
-"""
-5 tool cho RAG Agent, định nghĩa bằng LangChain @tool decorator.
+"""5 tool cho RAG Agent, định nghĩa bằng LangChain @tool decorator.
 Docstring của mỗi tool = description mà LLM dùng để quyết định gọi tool nào.
 """
 
 import logging
-from functools import lru_cache
 
 import psycopg2
 import psycopg2.extras
 from langchain_core.tools import tool
 
-from src.app.config.settings import settings
+from src.app.services.rag.db import ASPECT_LIST, ASPECT_TO_DIM, connect
+from src.app.services.rag.retrieval import hyde_embed
 
 logger = logging.getLogger(__name__)
-
-ASPECT_TO_DIM: dict[str, tuple[str, list[str]]] = {
-    "display":      ("dim_display",      ["display_type", "color_depth", "display_standard", "resolution", "screen_size", "touch_technology"]),
-    "camera":       ("dim_camera",       ["rear_camera", "front_camera", "flash_light", "camera_features", "video_recording", "video_call"]),
-    "performance":  ("dim_performance",  ["cpu_speed", "core_count", "chipset", "ram_capacity", "gpu_chip"]),
-    "storage":      ("dim_storage",      ["phonebook_storage", "internal_storage", "external_memory", "max_external_support"]),
-    "design":       ("dim_design",       ["design_style", "dimensions", "weight"]),
-    "battery":      ("dim_battery",      ["battery_type", "battery_capacity", "removable_battery"]),
-    "connectivity": ("dim_connectivity", ["network_3g", "network_4g", "sim_type", "sim_slots", "wifi", "gps", "bluetooth", "gprs_edge", "headphone_jack", "nfc", "usb_connection", "other_connections", "charging_port"]),
-    "utilities":    ("dim_utilities",    ["movie_playback", "music_playback", "charging_port_alt", "voice_recorder", "fm_radio", "other_features"]),
-}
-
-_ASPECT_LIST = " | ".join(ASPECT_TO_DIM.keys())
-
-
-def _connect() -> psycopg2.extensions.connection:
-    return psycopg2.connect(
-        host=settings.db_host,
-        port=settings.db_port,
-        dbname=settings.db_name,
-        user=settings.db_user,
-        password=settings.db_password,
-        connect_timeout=10,
-    )
-
-
-# Phải khớp chính xác với embedding_comment.py: cùng model, cùng max_seq_length,
-# cùng bước pyvi tokenize — nếu không query vector sẽ lệch không gian với comment vector.
-_EMBEDDING_MODEL_NAME = "dangvantuan/vietnamese-embedding"
-_MODEL_MAX_TOKENS = 254
-
-
-@lru_cache(maxsize=1)
-def _get_embedding_model():
-    from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(_EMBEDDING_MODEL_NAME)
-    model.max_seq_length = _MODEL_MAX_TOKENS
-    return model
-
-
-def _embed(text: str) -> list[float]:
-    from pyvi.ViTokenizer import tokenize
-    processed = tokenize(text).strip() or text
-    return _get_embedding_model().encode(processed, normalize_embeddings=True).tolist()
 
 
 # ─────────────────────────────────────────────
@@ -72,7 +27,7 @@ def search_product(name: str) -> list[dict]:
     để xác định đúng sản phẩm user đang hỏi (ví dụ: phân biệt iPhone 11 vs iPhone 12)
     rồi mới dùng product_id tương ứng để gọi các tool khác.
     """
-    conn = _connect()
+    conn = connect()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             try:
@@ -110,7 +65,7 @@ def get_all_specs(product_id: int) -> dict:
     Trả về dict với key là tên aspect, value là các thông số tương ứng (bỏ qua cột null).
     """
     result = {}
-    conn = _connect()
+    conn = connect()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             for aspect, (table, columns) in ASPECT_TO_DIM.items():
@@ -140,7 +95,7 @@ def get_product_specs(product_id: int, aspect: str) -> dict:
     table, columns = ASPECT_TO_DIM[aspect]
     col_list = ", ".join(columns)
 
-    conn = _connect()
+    conn = connect()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
@@ -159,7 +114,7 @@ get_product_specs.__doc__ = f"""
 Lấy thông số kỹ thuật chính thức của điện thoại theo một khía cạnh cụ thể từ dữ liệu MobileCity.
 Dùng khi user hỏi rõ về thông số cứng của một khía cạnh: camera bao nhiêu MP, pin bao nhiêu mAh, chip gì, RAM bao nhiêu...
 Nếu cần tổng quan nhiều khía cạnh cùng lúc, dùng get_all_specs thay thế.
-aspect hợp lệ: {_ASPECT_LIST}.
+aspect hợp lệ: {ASPECT_LIST}.
 """
 get_product_specs = tool(get_product_specs)
 
@@ -173,10 +128,10 @@ def get_comments(product_id: int, aspect: str, query: str, top_k: int = 20) -> l
         return [f"aspect không hợp lệ: {aspect}"]
 
     table, _ = ASPECT_TO_DIM[aspect]  # ví dụ "dim_camera" — vừa là tên bảng dim, vừa là giá trị cột dim_table
-    query_vec = _embed(query)
+    query_vec = hyde_embed(query, aspect, product_id)
     query_vec_str = "[" + ",".join(str(x) for x in query_vec) + "]"
 
-    conn = _connect()
+    conn = connect()
     try:
         with conn.cursor() as cur:
             try:
@@ -189,10 +144,18 @@ def get_comments(product_id: int, aspect: str, query: str, top_k: int = 20) -> l
                       AND ce.embedding IS NOT NULL
                     ORDER BY ce.embedding <=> %s::vector
                     LIMIT %s
-                """, (table, product_id, query_vec_str, top_k))
+                """, (table, product_id, query_vec_str, top_k * 5))
                 rows = cur.fetchall()
                 if rows:
-                    return [r[0] for r in rows]
+                    seen: set[str] = set()
+                    unique: list[str] = []
+                    for (text,) in rows:
+                        if text not in seen:
+                            seen.add(text)
+                            unique.append(text)
+                            if len(unique) >= top_k:
+                                break
+                    return unique
             except Exception:
                 conn.rollback()
 
@@ -215,8 +178,13 @@ get_comments.__doc__ = f"""
 Lấy ý kiến thực tế của người dùng YouTube Việt Nam về điện thoại theo khía cạnh cụ thể.
 Đây là nguồn dữ liệu phản ánh trải nghiệm thực tế — không phải thông số kỹ thuật hay bài review sponsor.
 Dùng khi user hỏi 'có tốt không', 'người dùng nói gì', 'thực tế thế nào', hoặc so sánh trải nghiệm.
-query là nội dung cụ thể muốn tìm, ví dụ: 'chụp đêm bị nhiễu', 'pin tụt nhanh', 'lag khi chơi game'.
-aspect hợp lệ: {_ASPECT_LIST}.
+
+query: phải mô tả CHỦ ĐỀ cụ thể muốn tìm trong comment.
+  - Tốt: 'chụp đêm bị nhiễu', 'pin tụt nhanh', 'lag chơi game', 'sạc nhanh'.
+  - Tránh: 'người dùng thích', 'có tốt không', 'ý kiến chung' (cụm meta —
+    embedding không phân biệt sentiment qua những từ này, retrieval sẽ nhiễu).
+
+aspect hợp lệ: {ASPECT_LIST}.
 """
 get_comments = tool(get_comments)
 
@@ -245,11 +213,11 @@ def list_products(brand: str | None = None, max_price: int | None = None) -> lis
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
-    conn = _connect()
+    conn = connect()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                f"SELECT product_id, product_name, price FROM fact_product {where} ORDER BY price LIMIT 50",
+                f"SELECT product_id, product_name, price FROM fact_product {where} ORDER BY price DESC LIMIT 20",
                 params,
             )
             return [dict(r) for r in cur.fetchall()]

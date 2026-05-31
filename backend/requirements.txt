@@ -18,3 +18,7 @@ unidecode
 sentence-transformers
 pyvi
 langchain-text-splitters
+fastapi
+uvicorn[standard]
+redis
+langgraph-checkpoint-redis
