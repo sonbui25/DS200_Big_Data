@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-sky-50 text-slate-800 antialiased;
+  }
+}
+
+@layer components {
+  .prose-chat {
+    @apply text-sm leading-relaxed;
+  }
+  .prose-chat h3 {
+    @apply font-semibold text-slate-800 mt-3 mb-1;
+  }
+  .prose-chat ul {
+    @apply list-disc list-inside space-y-1 text-slate-700;
+  }
+  .prose-chat ol {
+    @apply list-decimal list-inside space-y-1 text-slate-700;
+  }
+  .prose-chat strong {
+    @apply font-semibold text-slate-800;
+  }
+  .prose-chat p {
+    @apply mb-2 last:mb-0;
+  }
+  .prose-chat blockquote {
+    @apply border-l-2 border-indigo-300 pl-3 italic text-slate-600 my-2;
+  }
+}
+
+.typing-dot {
+  animation: bounce 1.2s infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+.message-enter {
+  animation: fadeSlideIn 0.25s ease-out;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

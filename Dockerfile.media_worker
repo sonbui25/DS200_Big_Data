@@ -1,0 +1,22 @@
+# 1. Dùng slim để giảm image size (~400MB → ~60MB)
+FROM python:3.13-slim
+
+# 2. Cài nodejs qua NodeSource để lấy version mới hơn (apt mặc định thường cũ)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY backend/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ /app/
+
+ENV PYTHONPATH=/app
+# 3. Thêm PYTHONUNBUFFERED để log hiện realtime, không bị buffer
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "-m", "src.scripts.media.run_unique_smartphone_media_flow"]

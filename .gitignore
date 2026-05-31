@@ -5,7 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-
+ds200_project
 # Distribution / packaging
 .Python
 build/
@@ -140,6 +140,8 @@ celerybeat.pid
 .venv
 env/
 venv/
+*_venv/
+Ung_venv311/
 ENV/
 env.bak/
 venv.bak/
@@ -205,3 +207,31 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+#data
+data/
+/backend/ffmpeg.exe
+/backend/ffplay.exe
+/backend/ffprobe.exe
+
+/backend/ffmpeg.exe
+/backend/ffplay.exe
+/backend/ffprobe.exe
+
+/backend/ffmpeg.exe
+/backend/ffplay.exe
+/backend/ffprobe.exe
+
+# Test file
+test_normalization.py
+test_db.py
+
+# Cookies youtube
+www.youtube.com_06-05-2026.json
+cookies.txt
+
+# classify comment dev phase
+.DS_Store
+backend/src/scripts/data_processing/Extract_transcript_from_audio.ipynb
+proposal_aspect_classification.md
+proposal_comment_aspect_classification.md

@@ -1,0 +1,25 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+requests
+beautifulsoup4
+SQLAlchemy>=2.0.0
+psycopg2-binary
+yt-dlp
+boto3
+python-dotenv
+langchain
+langchain-openai
+langchain-google-genai
+langgraph
+langsmith
+pydantic
+pydantic_settings
+psycopg
+youtube-transcript-api
+unidecode
+torch
+sentence-transformers
+pyvi
+langchain-text-splitters
+fastapi
+uvicorn[standard]
+redis
