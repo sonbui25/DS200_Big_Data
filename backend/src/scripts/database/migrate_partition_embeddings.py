@@ -138,12 +138,28 @@ def run_migration(conn: Any, dry_run: bool = False) -> None:
 	else:
 		logger.info("Step 1-3: SKIPPED (already done)")
 
+	# ── 3.5. Create index on old table for fast batch copy ───────────────
+	logger.info("Step 3.5: Ensure index on comment_embeddings_old for fast batch queries")
+	cur.execute("""
+		CREATE INDEX IF NOT EXISTS idx_old_dimtable_chunkid
+		ON comment_embeddings_old (dim_table, chunk_id)
+	""")
+	conn.commit()
+	logger.info("  Index ready.")
+
+	# Set TCP keepalive to prevent connection drops over internet
+	cur.execute("SET tcp_keepalives_idle = 60")
+	cur.execute("SET tcp_keepalives_interval = 15")
+	cur.execute("SET tcp_keepalives_count = 5")
+	cur.execute("SET statement_timeout = '0'")  # no timeout for long INSERTs
+	conn.commit()
+
 	# ── 4. Copy data (per partition to avoid timeout) ────────────────────
 	logger.info("Step 4: Copy data from old table to partitioned table (per partition)")
 	copied_total = 0
 
 	for dim_table_value in PARTITIONS:
-		batch_size = 10000
+		batch_size = 50000
 		copied_table = 0
 
 		# Resume: check if this partition already has data (from previous failed run)
